@@ -22,6 +22,9 @@ if [ "$ESTADO" = "ROLLBACK_COMPLETE" ] || [ "$ESTADO" = "ROLLBACK_FAILED" ]; the
   echo "== Borrando la pila fallida anterior ($ESTADO) =="
   aws cloudformation delete-stack --region "$REGION" --stack-name "$PILA"
   aws cloudformation wait stack-delete-complete --region "$REGION" --stack-name "$PILA"
+elif [ "$ESTADO" = "DELETE_IN_PROGRESS" ]; then
+  echo "== Esperando a que termine de borrarse la pila anterior =="
+  aws cloudformation wait stack-delete-complete --region "$REGION" --stack-name "$PILA"
 fi
 
 echo "== Buscando la plataforma vigente de Elastic Beanstalk (Python 3.12, Amazon Linux 2023) =="

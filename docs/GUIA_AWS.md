@@ -41,6 +41,21 @@ bash scripts/desplegar.sh
 El script busca solo la versión vigente de la plataforma de Beanstalk (Python 3.12), te pide el token
 y crea la pila `pedidos-hielo`. Tarda unos 10 minutos. Al final muestra las URL de pruebas y producción.
 
+### Si tu laboratorio no deja crear proyectos de CodeBuild
+
+Algunos laboratorios de AWS Academy bloquean `codebuild:CreateProject`. El error se ve así:
+`not authorized to perform: codebuild:CreateProject`. En ese caso elige otro modo de pruebas:
+
+```bash
+# Las pruebas corren en una acción "Commands" de CodePipeline (usa CodeBuild por debajo, sin crear proyecto)
+MODO_PRUEBAS=Commands bash scripts/desplegar.sh
+
+# Si también se bloquea: CodePipeline solo despliega y las pruebas quedan en GitHub Actions
+MODO_PRUEBAS=Ninguno bash scripts/desplegar.sh
+```
+
+El script borra solo la pila fallida anterior antes de volver a intentar. Si algo falla, imprime el motivo.
+
 > Alternativa sin CloudShell: **CloudFormation → Crear pila → Cargar un archivo de plantilla** →
 > `infra/pipeline.yml`. Llena `TokenGitHub` y `PlataformaBeanstalk` (el nombre exacto sale de
 > `aws elasticbeanstalk list-available-solution-stacks`).
@@ -82,6 +97,7 @@ y crea la pila `pedidos-hielo`. Tarda unos 10 minutos. Al final muestra las URL 
 
 | Error | Solución |
 |-------|----------|
+| `not authorized to perform: codebuild:CreateProject` | El laboratorio no deja crear proyectos de CodeBuild. Usa `MODO_PRUEBAS=Commands` (ver sección 2). |
 | `Cannot have more than 0 builds in queue` | Límite de CodeBuild de cuentas nuevas. Pide aumento en *Service Quotas* o abre un caso de soporte; en Learner Lab reinicia el lab y prueba de nuevo. |
 | La etapa Fuente falla con el token | Revisa que el token tenga permiso `repo` y no haya vencido. Si sigue fallando, crea una conexión en **Developer Tools → Settings → Connections → GitHub**, autorízala y vuelve a desplegar con `ArnConexion=<arn>` en vez del token. |
 | `No Solution Stack named ...` | La versión de la plataforma cambió. Usa `scripts/desplegar.sh`, que la busca sola. |

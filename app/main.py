@@ -6,7 +6,8 @@ Documentación interactiva:  http://127.0.0.1:8000/docs
 import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
+from datetime import date
+from typing import Literal, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.responses import FileResponse
@@ -47,7 +48,13 @@ def pagina_principal():
 
 @app.get("/api", tags=["General"])
 def estado_api():
-    return {"mensaje": "API de Pedidos de Hielo funcionando", "documentacion": "/docs"}
+    return {"mensaje": "API de Pedidos de Hielo funcionando", "documentacion": "/docs", "version": app.version}
+
+
+@app.get("/health", tags=["General"])
+def health():
+    """Chequeo de salud para Elastic Beanstalk / balanceador."""
+    return {"status": "ok"}
 
 
 @app.get("/catalogo", tags=["General"])
@@ -65,11 +72,28 @@ def crear_pedido(datos: PedidoCrear, db: sqlite3.Connection = Depends(get_db)):
 def listar_pedidos(
     estado: Optional[EstadoPedido] = Query(None, description="Filtrar por estado"),
     cliente: Optional[str] = Query(None, description="Buscar por nombre de cliente (parcial)"),
+    fecha_desde: Optional[date] = Query(None, description="Creados desde (AAAA-MM-DD)"),
+    fecha_hasta: Optional[date] = Query(None, description="Creados hasta (AAAA-MM-DD)"),
+    ordenar_por: Literal["id", "creado_en", "actualizado_en", "estado", "cliente", "cantidad"] = Query(
+        "creado_en", description="Campo por el que se ordena"
+    ),
+    orden: Literal["asc", "desc"] = Query("desc", description="asc = ascendente, desc = descendente"),
     limite: int = Query(100, ge=1, le=500),
     desde: int = Query(0, ge=0),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    return crud.listar_pedidos(db, estado.value if estado else None, cliente, limite, desde)
+    """Lista pedidos con filtros (estado, cliente, rango de fechas) y ordenamiento."""
+    return crud.listar_pedidos(
+        db,
+        estado.value if estado else None,
+        cliente,
+        limite,
+        desde,
+        ordenar_por,
+        orden,
+        fecha_desde.isoformat() if fecha_desde else None,
+        fecha_hasta.isoformat() if fecha_hasta else None,
+    )
 
 
 @app.get("/pedidos/resumen", tags=["Pedidos"])

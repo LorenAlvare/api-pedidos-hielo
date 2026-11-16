@@ -114,6 +114,13 @@
       <div class="filtros">
         <input id="buscar" placeholder="🔍 Buscar por cliente…">
         <select id="filtroEstado"><option value="">Todos los estados</option></select>
+        <select id="ordenar">
+          <option value="creado_en:desc">Más recientes primero</option>
+          <option value="creado_en:asc">Más antiguos primero</option>
+          <option value="estado:asc">Por estado</option>
+          <option value="cliente:asc">Por cliente (A-Z)</option>
+          <option value="cantidad:desc">Mayor cantidad</option>
+        </select>
       </div>
       <div class="tabla-wrap">
         <table>
@@ -176,6 +183,8 @@ async function cargarPedidos() {
   const params = new URLSearchParams();
   if ($("filtroEstado").value) params.set("estado", $("filtroEstado").value);
   if ($("buscar").value.trim()) params.set("cliente", $("buscar").value.trim());
+  const [campo, sentido] = $("ordenar").value.split(":");
+  params.set("ordenar_por", campo); params.set("orden", sentido);
   const pedidos = await api("/pedidos?" + params);
   if (!pedidos.length) {
     $("tabla").innerHTML = `<tr><td colspan="7" class="vacio">No hay pedidos para mostrar.<br>Registra el primero con el formulario.</td></tr>`;
@@ -241,6 +250,7 @@ $("resumen").addEventListener("click", ev => {
   $("filtroEstado").value = t.dataset.estado; refrescar();
 });
 $("filtroEstado").addEventListener("change", refrescar);
+$("ordenar").addEventListener("change", cargarPedidos);
 let espera; $("buscar").addEventListener("input", () => { clearTimeout(espera); espera = setTimeout(cargarPedidos, 300); });
 
 cargarCatalogo().then(refrescar).catch(e => aviso("No se pudo conectar con la API: " + e.message, "error"));

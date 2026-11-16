@@ -5,6 +5,8 @@ from typing import Optional
 from .schemas import PedidoActualizar, PedidoCrear
 
 CAMPOS_EDITABLES = ("cliente", "producto", "cantidad", "direccion", "estado")
+# Columnas por las que se permite ordenar (lista blanca: evita inyección SQL)
+CAMPOS_ORDEN = ("id", "creado_en", "actualizado_en", "estado", "cliente", "cantidad")
 
 
 def _a_dict(fila: Optional[sqlite3.Row]) -> Optional[dict]:
@@ -31,6 +33,10 @@ def listar_pedidos(
     cliente: Optional[str] = None,
     limite: int = 100,
     desde: int = 0,
+    ordenar_por: str = "creado_en",
+    orden: str = "desc",
+    fecha_desde: Optional[str] = None,
+    fecha_hasta: Optional[str] = None,
 ) -> list[dict]:
     sql = "SELECT * FROM pedidos WHERE 1=1"
     params: list = []
@@ -40,7 +46,15 @@ def listar_pedidos(
     if cliente:
         sql += " AND cliente LIKE ?"
         params.append(f"%{cliente}%")
-    sql += " ORDER BY id DESC LIMIT ? OFFSET ?"
+    if fecha_desde:
+        sql += " AND date(creado_en) >= date(?)"
+        params.append(fecha_desde)
+    if fecha_hasta:
+        sql += " AND date(creado_en) <= date(?)"
+        params.append(fecha_hasta)
+    campo = ordenar_por if ordenar_por in CAMPOS_ORDEN else "creado_en"
+    sentido = "ASC" if orden.lower() == "asc" else "DESC"
+    sql += f" ORDER BY {campo} {sentido}, id {sentido} LIMIT ? OFFSET ?"
     params += [limite, desde]
     return [dict(f) for f in conn.execute(sql, params).fetchall()]
 

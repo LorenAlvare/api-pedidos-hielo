@@ -10,9 +10,17 @@ Metadata:
       - Label: { default: "Repositorio de GitHub" }
         Parameters: [PropietarioGitHub, RepositorioGitHub, Rama, TokenGitHub, ArnConexion]
       - Label: { default: "Entorno de AWS" }
-        Parameters: [NombreProyecto, PlataformaBeanstalk, TipoInstancia, RolLaboratorio, PerfilInstanciaLaboratorio]
+        Parameters: [ModoPruebas, NombreProyecto, PlataformaBeanstalk, TipoInstancia, RolLaboratorio, PerfilInstanciaLaboratorio]
 
 Parameters:
+  ModoPruebas:
+    Type: String
+    Default: CodeBuild
+    AllowedValues: [CodeBuild, Commands, Ninguno]
+    Description: >
+      CodeBuild = proyecto de CodeBuild con buildspec.yml (lo ideal).
+      Commands = las pruebas corren en una accion "Commands" de CodePipeline (no requiere crear un proyecto de CodeBuild).
+      Ninguno = CodePipeline solo despliega; las pruebas quedan en GitHub Actions.
   NombreProyecto:
     Type: String
     Default: pedidos-hielo
@@ -59,6 +67,8 @@ Parameters:
 
 Conditions:
   UsarConexion: !Not [!Equals [!Ref ArnConexion, ""]]
+  ConCodeBuild: !Equals [!Ref ModoPruebas, CodeBuild]
+  ConEtapaPruebas: !Not [!Equals [!Ref ModoPruebas, Ninguno]]
 
 Rules:
   FuenteGitHub:
@@ -86,6 +96,7 @@ Resources:
   # ---------- Integracion continua: CodeBuild ----------
   ProyectoCodeBuild:
     Type: AWS::CodeBuild::Project
+    Condition: ConCodeBuild
     Properties:
       Name: !Sub "${NombreProyecto}-build"
       Description: Instala dependencias, ejecuta pytest y genera el artefacto
@@ -196,14 +207,27 @@ Resources:
                   OAuthToken: !Ref TokenGitHub
                   PollForSourceChanges: true
                 OutputArtifacts: [{ Name: CodigoFuente }]
-        - Name: Construccion
-          Actions:
-            - Name: CompilarYProbar
-              ActionTypeId: { Category: Build, Owner: AWS, Provider: CodeBuild, Version: "1" }
-              Configuration:
-                ProjectName: !Ref ProyectoCodeBuild
-              InputArtifacts: [{ Name: CodigoFuente }]
-              OutputArtifacts: [{ Name: ArtefactoBuild }]
+        - !If
+          - ConEtapaPruebas
+          - Name: Construccion
+            Actions:
+              - !If
+                - ConCodeBuild
+                # Proyecto de CodeBuild: usa buildspec.yml (pruebas, informe JUnit, cache y artefacto)
+                - Name: CompilarYProbar
+                  ActionTypeId: { Category: Build, Owner: AWS, Provider: CodeBuild, Version: "1" }
+                  Configuration:
+                    ProjectName: !Ref ProyectoCodeBuild
+                  InputArtifacts: [{ Name: CodigoFuente }]
+                  OutputArtifacts: [{ Name: ArtefactoBuild }]
+                # Accion Commands: CodePipeline corre los comandos en computo de CodeBuild sin crear un proyecto
+                - Name: Pruebas
+                  ActionTypeId: { Category: Compute, Owner: AWS, Provider: Commands, Version: "1" }
+                  Commands:
+                    - python3 -m pip install -r requirements.txt
+                    - python3 -m pytest -v
+                  InputArtifacts: [{ Name: CodigoFuente }]
+          - !Ref AWS::NoValue
         - Name: DesplegarPruebas
           Actions:
             - Name: BeanstalkPruebas
@@ -211,7 +235,7 @@ Resources:
               Configuration:
                 ApplicationName: !Ref AplicacionBeanstalk
                 EnvironmentName: !Ref EntornoPruebas
-              InputArtifacts: [{ Name: ArtefactoBuild }]
+              InputArtifacts: [{ Name: !If [ConCodeBuild, ArtefactoBuild, CodigoFuente] }]
         - Name: Aprobacion
           Actions:
             - Name: AprobarPaseAProduccion
@@ -226,7 +250,7 @@ Resources:
               Configuration:
                 ApplicationName: !Ref AplicacionBeanstalk
                 EnvironmentName: !Ref EntornoProduccion
-              InputArtifacts: [{ Name: ArtefactoBuild }]
+              InputArtifacts: [{ Name: !If [ConCodeBuild, ArtefactoBuild, CodigoFuente] }]
 
 Outputs:
   UrlPruebas:

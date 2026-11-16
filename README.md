@@ -13,6 +13,11 @@ api-python/
 │   ├── crud.py       # Consultas a la base de datos
 │   └── database.py   # Conexión SQLite y creación de la tabla
 ├── tests/test_api.py # Pruebas automáticas
+├── infra/pipeline.yml # CloudFormation: CodePipeline + CodeBuild + Elastic Beanstalk
+├── scripts/desplegar.sh # Crea la pila desde CloudShell
+├── docs/GUIA_AWS.md  # Guía paso a paso
+├── buildspec.yml     # Pasos de CodeBuild (instalar, probar, empaquetar)
+├── Procfile          # Cómo arranca la app en Elastic Beanstalk
 └── requirements.txt
 ```
 
@@ -38,7 +43,8 @@ La base de datos `pedidos_hielo.db` se crea sola la primera vez.
 | GET    | `/`                      | Interfaz web                                      |
 | GET    | `/catalogo`              | Lista productos y estados válidos                 |
 | POST   | `/pedidos`               | Registra un pedido                                |
-| GET    | `/pedidos`               | Lista pedidos (filtros: `estado`, `cliente`, `limite`, `desde`) |
+| GET    | `/pedidos`               | Lista pedidos. Filtros: `estado`, `cliente`, `fecha_desde`, `fecha_hasta`. Orden: `ordenar_por` (`creado_en`, `estado`, `cliente`, `cantidad`, `id`) y `orden` (`asc`/`desc`) |
+| GET    | `/health`                | Chequeo de salud (usado en el despliegue)         |
 | GET    | `/pedidos/resumen`       | Total de pedidos por estado                       |
 | GET    | `/pedidos/{id}`          | Consulta un pedido                                |
 | PUT    | `/pedidos/{id}`          | Actualiza uno o varios campos                     |
@@ -67,3 +73,23 @@ Datos inválidos (cantidad 0, producto inexistente, cliente vacío, estado desco
 ```bash
 pytest -v
 ```
+
+## CI/CD en AWS
+
+```
+git push (GitHub) ─► CodePipeline ─► CodeBuild (pytest + artefacto)
+                                 ─► Elastic Beanstalk PRUEBAS
+                                 ─► Aprobación manual
+                                 ─► Elastic Beanstalk PRODUCCIÓN
+```
+
+Toda la infraestructura está en `infra/pipeline.yml` (CloudFormation). Para crearla, en AWS CloudShell:
+
+```bash
+git clone https://github.com/LorenAlvare/api-pedidos-hielo.git && cd api-pedidos-hielo
+bash scripts/desplegar.sh
+```
+
+La guía completa, con capturas sugeridas para el informe y problemas comunes, está en [docs/GUIA_AWS.md](docs/GUIA_AWS.md).
+
+Ejemplo de ordenamiento: `GET /pedidos?ordenar_por=creado_en&orden=asc&estado=pendiente`

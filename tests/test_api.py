@@ -38,6 +38,21 @@ def test_flujo_completo():
         assert c.get(f"/pedidos/{p['id']}").status_code == 404
 
 
+def test_ordenar_y_filtrar():
+    with TestClient(app) as c:
+        ids = [c.post("/pedidos", json={**PEDIDO, "cliente": n, "cantidad": q}).json()["id"]
+               for n, q in (("Zeta Bar", 5), ("Alfa Hotel", 50))]
+        nombres = [p["cliente"] for p in c.get("/pedidos", params={"ordenar_por": "cliente", "orden": "asc"}).json()]
+        assert nombres.index("Alfa Hotel") < nombres.index("Zeta Bar")
+        cant = [p["cantidad"] for p in c.get("/pedidos", params={"ordenar_por": "cantidad", "orden": "desc"}).json()]
+        assert cant == sorted(cant, reverse=True)
+        hoy = c.get(f"/pedidos/{ids[0]}").json()["creado_en"][:10]
+        assert len(c.get("/pedidos", params={"fecha_desde": hoy, "fecha_hasta": hoy}).json()) >= 2
+        assert c.get("/pedidos", params={"fecha_hasta": "2000-01-01"}).json() == []
+        assert c.get("/pedidos", params={"ordenar_por": "contrasena"}).status_code == 422
+        assert c.get("/health").json() == {"status": "ok"}
+
+
 def test_validaciones():
     with TestClient(app) as c:
         assert c.post("/pedidos", json={**PEDIDO, "cantidad": 0}).status_code == 422

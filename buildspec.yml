@@ -1,16 +1,46 @@
 version: 0.2
 
+# CodeBuild: instala dependencias, ejecuta las pruebas unitarias y empaqueta
+# el artefacto que CodePipeline despliega en Elastic Beanstalk.
+
 phases:
   install:
     runtime-versions:
-      nodejs: 18
+      python: 3.12
     commands:
-      - echo "Instalando dependencias de Node.js..."
-      - npm install
+      - echo "== Instalando dependencias =="
+      - python -m pip install --upgrade pip
+      - python -m pip install -r requirements.txt
+
+  pre_build:
+    commands:
+      - echo "== Verificando sintaxis =="
+      - python -m compileall -q app
+
   build:
     commands:
-      - echo "Verificando compilacion del proyecto..."
+      - echo "== Ejecutando pruebas unitarias =="
+      - python -m pytest -v --junitxml=test-results.xml
+
+  post_build:
+    commands:
+      - echo "== Construccion finalizada el $(date) - commit ${CODEBUILD_RESOLVED_SOURCE_VERSION} =="
+
+# Informe de pruebas visible en la consola de CodeBuild (pestaña "Informes")
+reports:
+  pruebas_pedidos:
+    files:
+      - test-results.xml
+    file-format: JUNITXML
+
+# Artefacto que se despliega (lo que necesita Elastic Beanstalk)
 artifacts:
   files:
-    - '**/*'
-  discard-paths: no
+    - "app/**/*"
+    - requirements.txt
+    - Procfile
+
+# Caché de dependencias de pip entre ejecuciones (acelera el build)
+cache:
+  paths:
+    - "/root/.cache/pip/**/*"

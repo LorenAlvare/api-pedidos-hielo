@@ -1,0 +1,239 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Plataforma de Pedidos de Hielo - Infraestructura como codigo (AWS Academy: usa LabRole y LabInstanceProfile).
+  CI/CD: GitHub -> CodePipeline -> CodeBuild (pruebas + artefacto) ->
+  Elastic Beanstalk PRUEBAS -> aprobacion manual -> Elastic Beanstalk PRODUCCION.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: "Repositorio de GitHub" }
+        Parameters: [PropietarioGitHub, RepositorioGitHub, Rama, TokenGitHub, ArnConexion]
+      - Label: { default: "Entorno de AWS" }
+        Parameters: [NombreProyecto, PlataformaBeanstalk, TipoInstancia, RolLaboratorio, PerfilInstanciaLaboratorio]
+
+Parameters:
+  NombreProyecto:
+    Type: String
+    Default: pedidos-hielo
+    AllowedPattern: "[a-z0-9-]+"
+    Description: Prefijo para los nombres de los recursos (minusculas y guiones).
+  PropietarioGitHub:
+    Type: String
+    Default: LorenAlvare
+    Description: Usuario u organizacion de GitHub duena del repositorio.
+  RepositorioGitHub:
+    Type: String
+    Default: api-pedidos-hielo
+  Rama:
+    Type: String
+    Default: main
+  TokenGitHub:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: >
+      Token personal de GitHub (classic) con permiso "repo". Se usa si NO se indica ArnConexion.
+  ArnConexion:
+    Type: String
+    Default: ""
+    Description: >
+      (Opcional) ARN de una conexion de AWS CodeConnections ya autorizada con GitHub.
+      Si se deja vacio se usa TokenGitHub.
+  PlataformaBeanstalk:
+    Type: String
+    Description: >
+      Nombre exacto de la plataforma de Elastic Beanstalk. El script scripts/desplegar.sh la busca solo. A mano:
+      aws elasticbeanstalk list-available-solution-stacks --query "SolutionStacks[?contains(@, 'Python 3.12')]"
+  TipoInstancia:
+    Type: String
+    Default: t3.micro
+  RolLaboratorio:
+    Type: String
+    Default: LabRole
+    Description: Rol existente de AWS Academy (Learner Lab no permite crear roles IAM).
+  PerfilInstanciaLaboratorio:
+    Type: String
+    Default: LabInstanceProfile
+    Description: Perfil de instancia existente de AWS Academy para las EC2 de Beanstalk.
+
+Conditions:
+  UsarConexion: !Not [!Equals [!Ref ArnConexion, ""]]
+
+Rules:
+  FuenteGitHub:
+    Assertions:
+      - Assert: !Or
+          - !Not [!Equals [!Ref ArnConexion, ""]]
+          - !Not [!Equals [!Ref TokenGitHub, ""]]
+        AssertDescription: Indica TokenGitHub o ArnConexion para que CodePipeline pueda leer el repositorio.
+
+Resources:
+  # ---------- Almacenamiento de artefactos ----------
+  BucketArtefactos:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # ---------- Integracion continua: CodeBuild ----------
+  ProyectoCodeBuild:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${NombreProyecto}-build"
+      Description: Instala dependencias, ejecuta pytest y genera el artefacto
+      ServiceRole: !Sub "arn:aws:iam::${AWS::AccountId}:role/${RolLaboratorio}"
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: buildspec.yml
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+      Cache:
+        Type: LOCAL
+        Modes: [LOCAL_CUSTOM_CACHE]
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Sub "/codebuild/${NombreProyecto}"
+
+  # ---------- Despliegue: Elastic Beanstalk ----------
+  AplicacionBeanstalk:
+    Type: AWS::ElasticBeanstalk::Application
+    Properties:
+      ApplicationName: !Sub "${NombreProyecto}-app"
+      Description: API REST de gestion de pedidos de hielo (FastAPI)
+
+  PlantillaConfiguracion:
+    Type: AWS::ElasticBeanstalk::ConfigurationTemplate
+    Properties:
+      ApplicationName: !Ref AplicacionBeanstalk
+      SolutionStackName: !Ref PlataformaBeanstalk
+      OptionSettings:
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: EnvironmentType
+          Value: SingleInstance        # una sola instancia: sin balanceador, mas barato y rapido
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: ServiceRole
+          Value: !Sub "arn:aws:iam::${AWS::AccountId}:role/${RolLaboratorio}"
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: IamInstanceProfile
+          Value: !Ref PerfilInstanciaLaboratorio
+        - Namespace: aws:ec2:instances
+          OptionName: InstanceTypes
+          Value: !Ref TipoInstancia
+        - Namespace: aws:elasticbeanstalk:application
+          OptionName: Application Healthcheck URL
+          Value: /health
+        - Namespace: aws:elasticbeanstalk:healthreporting:system
+          OptionName: SystemType
+          Value: enhanced
+        - Namespace: aws:elasticbeanstalk:cloudwatch:logs
+          OptionName: StreamLogs
+          Value: "true"                # logs de la app en CloudWatch Logs
+        - Namespace: aws:elasticbeanstalk:cloudwatch:logs
+          OptionName: RetentionInDays
+          Value: "7"
+
+  EntornoPruebas:
+    Type: AWS::ElasticBeanstalk::Environment
+    Properties:
+      ApplicationName: !Ref AplicacionBeanstalk
+      EnvironmentName: !Sub "${NombreProyecto}-pruebas"
+      TemplateName: !Ref PlantillaConfiguracion
+      Tier: { Name: WebServer, Type: Standard }
+
+  EntornoProduccion:
+    Type: AWS::ElasticBeanstalk::Environment
+    Properties:
+      ApplicationName: !Ref AplicacionBeanstalk
+      EnvironmentName: !Sub "${NombreProyecto}-produccion"
+      TemplateName: !Ref PlantillaConfiguracion
+      Tier: { Name: WebServer, Type: Standard }
+
+  # ---------- Orquestacion: CodePipeline ----------
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub "${NombreProyecto}-pipeline"
+      PipelineType: V2
+      RoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/${RolLaboratorio}"
+      ArtifactStore:
+        Type: S3
+        Location: !Ref BucketArtefactos
+      Stages:
+        - Name: Fuente
+          Actions:
+            - !If
+              - UsarConexion
+              # Opcion A: conexion de AWS CodeConnections (GitHub App). Detecta cada push al instante.
+              - Name: GitHub
+                ActionTypeId: { Category: Source, Owner: AWS, Provider: CodeStarSourceConnection, Version: "1" }
+                Configuration:
+                  ConnectionArn: !Ref ArnConexion
+                  FullRepositoryId: !Sub "${PropietarioGitHub}/${RepositorioGitHub}"
+                  BranchName: !Ref Rama
+                  DetectChanges: true
+                  OutputArtifactFormat: CODE_ZIP
+                OutputArtifacts: [{ Name: CodigoFuente }]
+              # Opcion B: token personal de GitHub. CodePipeline revisa el repo y arranca con cada commit nuevo.
+              - Name: GitHub
+                ActionTypeId: { Category: Source, Owner: ThirdParty, Provider: GitHub, Version: "1" }
+                Configuration:
+                  Owner: !Ref PropietarioGitHub
+                  Repo: !Ref RepositorioGitHub
+                  Branch: !Ref Rama
+                  OAuthToken: !Ref TokenGitHub
+                  PollForSourceChanges: true
+                OutputArtifacts: [{ Name: CodigoFuente }]
+        - Name: Construccion
+          Actions:
+            - Name: CompilarYProbar
+              ActionTypeId: { Category: Build, Owner: AWS, Provider: CodeBuild, Version: "1" }
+              Configuration:
+                ProjectName: !Ref ProyectoCodeBuild
+              InputArtifacts: [{ Name: CodigoFuente }]
+              OutputArtifacts: [{ Name: ArtefactoBuild }]
+        - Name: DesplegarPruebas
+          Actions:
+            - Name: BeanstalkPruebas
+              ActionTypeId: { Category: Deploy, Owner: AWS, Provider: ElasticBeanstalk, Version: "1" }
+              Configuration:
+                ApplicationName: !Ref AplicacionBeanstalk
+                EnvironmentName: !Ref EntornoPruebas
+              InputArtifacts: [{ Name: ArtefactoBuild }]
+        - Name: Aprobacion
+          Actions:
+            - Name: AprobarPaseAProduccion
+              ActionTypeId: { Category: Approval, Owner: AWS, Provider: Manual, Version: "1" }
+              Configuration:
+                CustomData: Revisar la API en el entorno de PRUEBAS antes de aprobar.
+                ExternalEntityLink: !Sub "http://${EntornoPruebas.EndpointURL}/docs"
+        - Name: DesplegarProduccion
+          Actions:
+            - Name: BeanstalkProduccion
+              ActionTypeId: { Category: Deploy, Owner: AWS, Provider: ElasticBeanstalk, Version: "1" }
+              Configuration:
+                ApplicationName: !Ref AplicacionBeanstalk
+                EnvironmentName: !Ref EntornoProduccion
+              InputArtifacts: [{ Name: ArtefactoBuild }]
+
+Outputs:
+  UrlPruebas:
+    Description: URL del entorno de pruebas
+    Value: !Sub "http://${EntornoPruebas.EndpointURL}"
+  UrlProduccion:
+    Description: URL del entorno de produccion
+    Value: !Sub "http://${EntornoProduccion.EndpointURL}"
+  Pipeline:
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/codesuite/codepipeline/pipelines/${Pipeline}/view"

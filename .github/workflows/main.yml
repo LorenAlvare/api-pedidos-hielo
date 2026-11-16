@@ -1,16 +1,28 @@
+name: CI/CD API Pedidos de Hielo
 
-name: Pruebas API Pedidos de Hielo
-
+# Cada push a main: pruebas -> empaquetar -> desplegar en PRUEBAS -> desplegar en PRODUCCION.
+# En pull requests solo se ejecutan las pruebas.
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  APLICACION: pedidos-hielo-app
+  ENTORNO_PRUEBAS: pedidos-hielo-pruebas
+  ENTORNO_PRODUCCION: pedidos-hielo-produccion
+
+concurrency:
+  group: despliegue-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   pruebas:
+    name: Pruebas unitarias
     runs-on: ubuntu-latest
-
     steps:
       - name: Descargar repositorio
         uses: actions/checkout@v4
@@ -18,13 +30,98 @@ jobs:
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
+          cache: pip            # cache de dependencias entre ejecuciones
 
       - name: Instalar dependencias
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest httpx
+
+      - name: Verificar sintaxis
+        run: python -m compileall -q app
 
       - name: Ejecutar pruebas
-        run: python -m pytest -v
+        run: python -m pytest -v --junitxml=test-results.xml
+
+      - name: Guardar informe de pruebas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: informe-pruebas
+          path: test-results.xml
+
+  empaquetar:
+    name: Empaquetar y registrar versión
+    needs: pruebas
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Credenciales de AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Crear artefacto (app.zip)
+        run: zip -r app.zip app requirements.txt Procfile -x '*__pycache__*'
+
+      - name: Guardar artefacto en GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: app
+          path: app.zip
+
+      - name: Subir a S3 y crear versión en Beanstalk
+        id: version
+        run: |
+          VERSION="v${{ github.run_number }}-${GITHUB_SHA::7}"
+          BUCKET=$(aws elasticbeanstalk create-storage-location --query S3Bucket --output text)
+          aws s3 cp app.zip "s3://$BUCKET/$APLICACION/$VERSION.zip"
+          aws elasticbeanstalk create-application-version \
+            --application-name "$APLICACION" --version-label "$VERSION" \
+            --description "$(git log -1 --pretty=%s | cut -c1-190)" \
+            --source-bundle S3Bucket="$BUCKET",S3Key="$APLICACION/$VERSION.zip"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  desplegar-pruebas:
+    name: Desplegar en PRUEBAS
+    needs: empaquetar
+    runs-on: ubuntu-latest
+    environment:
+      name: pruebas
+      url: ${{ steps.despliegue.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - id: despliegue
+        run: bash scripts/desplegar_version.sh "$ENTORNO_PRUEBAS" "${{ needs.empaquetar.outputs.version }}"
+
+  desplegar-produccion:
+    name: Desplegar en PRODUCCIÓN
+    needs: [empaquetar, desplegar-pruebas]
+    runs-on: ubuntu-latest
+    environment:
+      name: produccion
+      url: ${{ steps.despliegue.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - id: despliegue
+        run: bash scripts/desplegar_version.sh "$ENTORNO_PRODUCCION" "${{ needs.empaquetar.outputs.version }}"

@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Plataforma de Pedidos de Hielo - Infraestructura como codigo (solo Elastic Beanstalk).
+  Crea la aplicacion y dos entornos (pruebas y produccion). El despliegue continuo lo hace
+  GitHub Actions (.github/workflows/main.yml) en cada push a main.
+
+Parameters:
+  NombreProyecto:
+    Type: String
+    Default: pedidos-hielo
+    AllowedPattern: "[a-z0-9-]+"
+  PlataformaBeanstalk:
+    Type: String
+    Description: >
+      Nombre exacto de la plataforma. scripts/crear_beanstalk.sh la busca solo. A mano:
+      aws elasticbeanstalk list-available-solution-stacks --query "SolutionStacks[?contains(@, 'Python 3.12')]"
+  TipoInstancia:
+    Type: String
+    Default: t3.micro
+  RolServicio:
+    Type: String
+    Default: LabRole
+    Description: Rol existente para el servicio de Beanstalk (AWS Academy = LabRole).
+  PerfilInstancia:
+    Type: String
+    Default: LabInstanceProfile
+    Description: Perfil de instancia existente para las EC2 (AWS Academy = LabInstanceProfile).
+
+Resources:
+  AplicacionBeanstalk:
+    Type: AWS::ElasticBeanstalk::Application
+    Properties:
+      ApplicationName: !Sub "${NombreProyecto}-app"
+      Description: API REST de gestion de pedidos de hielo (FastAPI)
+
+  PlantillaConfiguracion:
+    Type: AWS::ElasticBeanstalk::ConfigurationTemplate
+    Properties:
+      ApplicationName: !Ref AplicacionBeanstalk
+      SolutionStackName: !Ref PlataformaBeanstalk
+      OptionSettings:
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: EnvironmentType
+          Value: SingleInstance        # una sola instancia: sin balanceador, mas barato y rapido
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: ServiceRole
+          Value: !Sub "arn:aws:iam::${AWS::AccountId}:role/${RolServicio}"
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: IamInstanceProfile
+          Value: !Ref PerfilInstancia
+        - Namespace: aws:ec2:instances
+          OptionName: InstanceTypes
+          Value: !Ref TipoInstancia
+        - Namespace: aws:elasticbeanstalk:application
+          OptionName: Application Healthcheck URL
+          Value: /health
+        - Namespace: aws:elasticbeanstalk:healthreporting:system
+          OptionName: SystemType
+          Value: enhanced
+        - Namespace: aws:elasticbeanstalk:cloudwatch:logs
+          OptionName: StreamLogs
+          Value: "true"                # logs de la app en CloudWatch Logs
+        - Namespace: aws:elasticbeanstalk:cloudwatch:logs
+          OptionName: RetentionInDays
+          Value: "7"
+
+  EntornoPruebas:
+    Type: AWS::ElasticBeanstalk::Environment
+    Properties:
+      ApplicationName: !Ref AplicacionBeanstalk
+      EnvironmentName: !Sub "${NombreProyecto}-pruebas"
+      TemplateName: !Ref PlantillaConfiguracion
+      Tier: { Name: WebServer, Type: Standard }
+
+  EntornoProduccion:
+    Type: AWS::ElasticBeanstalk::Environment
+    Properties:
+      ApplicationName: !Ref AplicacionBeanstalk
+      EnvironmentName: !Sub "${NombreProyecto}-produccion"
+      TemplateName: !Ref PlantillaConfiguracion
+      Tier: { Name: WebServer, Type: Standard }
+
+Outputs:
+  UrlPruebas:
+    Value: !Sub "http://${EntornoPruebas.EndpointURL}"
+  UrlProduccion:
+    Value: !Sub "http://${EntornoProduccion.EndpointURL}"

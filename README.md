@@ -13,8 +13,10 @@ api-python/
 │   ├── crud.py       # Consultas a la base de datos
 │   └── database.py   # Conexión SQLite y creación de la tabla
 ├── tests/test_api.py # Pruebas automáticas
-├── infra/pipeline.yml # CloudFormation: CodePipeline + CodeBuild + Elastic Beanstalk
-├── scripts/desplegar.sh # Crea la pila desde CloudShell
+├── infra/beanstalk.yml # CloudFormation: aplicación y entornos de Elastic Beanstalk
+├── infra/pipeline.yml # Alternativa: CodePipeline + CodeBuild + Elastic Beanstalk
+├── scripts/crear_beanstalk.sh # Crea los entornos desde CloudShell
+├── scripts/desplegar.sh # Alternativa con CodePipeline
 ├── docs/GUIA_AWS.md  # Guía paso a paso
 ├── buildspec.yml     # Pasos de CodeBuild (instalar, probar, empaquetar)
 ├── Procfile          # Cómo arranca la app en Elastic Beanstalk
@@ -77,19 +79,19 @@ pytest -v
 ## CI/CD en AWS
 
 ```
-git push (GitHub) ─► CodePipeline ─► CodeBuild (pytest + artefacto)
-                                 ─► Elastic Beanstalk PRUEBAS
-                                 ─► Aprobación manual
-                                 ─► Elastic Beanstalk PRODUCCIÓN
+git push (GitHub) ─► GitHub Actions: pytest ─► app.zip a S3 ─► Elastic Beanstalk PRUEBAS ─► Elastic Beanstalk PRODUCCIÓN
 ```
 
-Toda la infraestructura está en `infra/pipeline.yml` (CloudFormation). Para crearla, en AWS CloudShell:
+El laboratorio de AWS Academy no permite crear CodeBuild ni CodePipeline, así que el CI/CD corre en GitHub Actions
+(`.github/workflows/main.yml`) y despliega en Elastic Beanstalk, creado con CloudFormation (`infra/beanstalk.yml`):
 
 ```bash
+# En AWS CloudShell, una sola vez
 git clone https://github.com/LorenAlvare/api-pedidos-hielo.git && cd api-pedidos-hielo
-bash scripts/desplegar.sh
+bash scripts/crear_beanstalk.sh
 ```
 
-La guía completa, con capturas sugeridas para el informe y problemas comunes, está en [docs/GUIA_AWS.md](docs/GUIA_AWS.md).
+Luego se cargan las credenciales del laboratorio como secretos de GitHub. Guía completa (secretos, demo,
+capturas para el informe y la alternativa con CodePipeline + CodeBuild): [docs/GUIA_AWS.md](docs/GUIA_AWS.md).
 
 Ejemplo de ordenamiento: `GET /pedidos?ordenar_por=creado_en&orden=asc&estado=pendiente`

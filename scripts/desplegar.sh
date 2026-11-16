@@ -9,11 +9,15 @@
 #   Commands                - accion Commands de CodePipeline (no crea proyecto de CodeBuild)
 #   Ninguno                 - CodePipeline solo despliega; las pruebas quedan en GitHub Actions
 # Ejemplo: MODO_PRUEBAS=Commands bash scripts/desplegar.sh
+#
+# Cuenta de AWS propia (no AWS Academy): CUENTA_PROPIA=1 bash scripts/desplegar.sh
+#   La plantilla crea sus propios roles IAM en vez de usar LabRole / LabInstanceProfile.
 set -euo pipefail
 
 PILA="${PILA:-pedidos-hielo}"
 REGION="${AWS_REGION:-us-east-1}"
 MODO="${MODO_PRUEBAS:-CodeBuild}"
+if [ "${CUENTA_PROPIA:-0}" = "1" ]; then ROL=""; PERFIL=""; else ROL="LabRole"; PERFIL="LabInstanceProfile"; fi
 
 # Si un intento anterior fallo al crear la pila, hay que borrarla antes de reintentar
 ESTADO=$(aws cloudformation describe-stacks --region "$REGION" --stack-name "$PILA" \
@@ -43,9 +47,12 @@ echo "== Desplegando la pila $PILA, modo de pruebas $MODO (tarda unos 10 minutos
 if ! aws cloudformation deploy --region "$REGION" \
   --stack-name "$PILA" \
   --template-file infra/pipeline.yml \
+  --capabilities CAPABILITY_IAM \
   --parameter-overrides \
     "PlataformaBeanstalk=$PLATAFORMA" \
     "ModoPruebas=$MODO" \
+    "RolLaboratorio=$ROL" \
+    "PerfilInstanciaLaboratorio=$PERFIL" \
     "TokenGitHub=$TOKEN_GITHUB" \
     "PropietarioGitHub=${PROPIETARIO_GITHUB:-LorenAlvare}" \
     "RepositorioGitHub=${REPOSITORIO_GITHUB:-api-pedidos-hielo}" \

@@ -59,15 +59,18 @@ Parameters:
   RolLaboratorio:
     Type: String
     Default: LabRole
-    Description: Rol existente de AWS Academy (Learner Lab no permite crear roles IAM).
+    Description: >
+      Rol existente de AWS Academy (Learner Lab no permite crear roles IAM).
+      En una cuenta propia dejarlo vacio y la plantilla crea los roles necesarios.
   PerfilInstanciaLaboratorio:
     Type: String
     Default: LabInstanceProfile
-    Description: Perfil de instancia existente de AWS Academy para las EC2 de Beanstalk.
+    Description: Perfil de instancia existente de AWS Academy. En cuenta propia dejarlo vacio.
 
 Conditions:
   UsarConexion: !Not [!Equals [!Ref ArnConexion, ""]]
   ConCodeBuild: !Equals [!Ref ModoPruebas, CodeBuild]
+  CrearRoles: !Equals [!Ref RolLaboratorio, ""]
   ConEtapaPruebas: !Not [!Equals [!Ref ModoPruebas, Ninguno]]
 
 Rules:
@@ -93,6 +96,78 @@ Resources:
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
 
+  # ---------- Roles IAM (solo en cuenta propia; en AWS Academy se usa LabRole) ----------
+  RolCodeBuild:
+    Type: AWS::IAM::Role
+    Condition: CrearRoles
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - { Effect: Allow, Principal: { Service: codebuild.amazonaws.com }, Action: sts:AssumeRole }
+      Policies:
+        - PolicyName: build
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents]
+                Resource: "*"
+              - Effect: Allow
+                Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject, s3:GetBucketLocation]
+                Resource: [!GetAtt BucketArtefactos.Arn, !Sub "${BucketArtefactos.Arn}/*"]
+              - Effect: Allow
+                Action: [codebuild:CreateReportGroup, codebuild:CreateReport, codebuild:UpdateReport, codebuild:BatchPutTestCases]
+                Resource: "*"
+
+  RolPipeline:
+    Type: AWS::IAM::Role
+    Condition: CrearRoles
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - { Effect: Allow, Principal: { Service: codepipeline.amazonaws.com }, Action: sts:AssumeRole }
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess-AWSElasticBeanstalk
+      Policies:
+        - PolicyName: pipeline
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action: [s3:*]
+                Resource: [!GetAtt BucketArtefactos.Arn, !Sub "${BucketArtefactos.Arn}/*"]
+              - Effect: Allow
+                Action: [codebuild:StartBuild, codebuild:BatchGetBuilds, logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents, logs:GetLogEvents]
+                Resource: "*"
+              - Effect: Allow
+                Action: [codestar-connections:UseConnection, codeconnections:UseConnection]
+                Resource: "*"
+
+  RolServicioBeanstalk:
+    Type: AWS::IAM::Role
+    Condition: CrearRoles
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - { Effect: Allow, Principal: { Service: elasticbeanstalk.amazonaws.com }, Action: sts:AssumeRole }
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSElasticBeanstalkEnhancedHealth
+        - arn:aws:iam::aws:policy/AWSElasticBeanstalkManagedUpdatesCustomerRolePolicy
+
+  RolInstancias:
+    Type: AWS::IAM::Role
+    Condition: CrearRoles
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - { Effect: Allow, Principal: { Service: ec2.amazonaws.com }, Action: sts:AssumeRole }
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSElasticBeanstalkWebTier
+
+  PerfilInstancias:
+    Type: AWS::IAM::InstanceProfile
+    Condition: CrearRoles
+    Properties:
+      Roles: [!Ref RolInstancias]
+
   # ---------- Integracion continua: CodeBuild ----------
   ProyectoCodeBuild:
     Type: AWS::CodeBuild::Project
@@ -100,7 +175,7 @@ Resources:
     Properties:
       Name: !Sub "${NombreProyecto}-build"
       Description: Instala dependencias, ejecuta pytest y genera el artefacto
-      ServiceRole: !Sub "arn:aws:iam::${AWS::AccountId}:role/${RolLaboratorio}"
+      ServiceRole: !If [CrearRoles, !GetAtt RolCodeBuild.Arn, !Sub "arn:aws:iam::${AWS::AccountId}:role/${RolLaboratorio}"]
       Source:
         Type: CODEPIPELINE
         BuildSpec: buildspec.yml
@@ -136,10 +211,10 @@ Resources:
           Value: SingleInstance        # una sola instancia: sin balanceador, mas barato y rapido
         - Namespace: aws:elasticbeanstalk:environment
           OptionName: ServiceRole
-          Value: !Sub "arn:aws:iam::${AWS::AccountId}:role/${RolLaboratorio}"
+          Value: !If [CrearRoles, !GetAtt RolServicioBeanstalk.Arn, !Sub "arn:aws:iam::${AWS::AccountId}:role/${RolLaboratorio}"]
         - Namespace: aws:autoscaling:launchconfiguration
           OptionName: IamInstanceProfile
-          Value: !Ref PerfilInstanciaLaboratorio
+          Value: !If [CrearRoles, !Ref PerfilInstancias, !Ref PerfilInstanciaLaboratorio]
         - Namespace: aws:ec2:instances
           OptionName: InstanceTypes
           Value: !Ref TipoInstancia
@@ -178,7 +253,7 @@ Resources:
     Properties:
       Name: !Sub "${NombreProyecto}-pipeline"
       PipelineType: V2
-      RoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/${RolLaboratorio}"
+      RoleArn: !If [CrearRoles, !GetAtt RolPipeline.Arn, !Sub "arn:aws:iam::${AWS::AccountId}:role/${RolLaboratorio}"]
       ArtifactStore:
         Type: S3
         Location: !Ref BucketArtefactos

@@ -1,30 +1,36 @@
-
-name: Pruebas API Pedidos de Hielo
+name: CI/CD Deployment to AWS Elastic Beanstalk (Node.js)
 
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+    branches: [ main, master ]
 
 jobs:
-  pruebas:
+  deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Descargar repositorio
-        uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      - name: Configurar Python
-        uses: actions/setup-python@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
         with:
-          python-version: '3.11'
+          node-version: '18'
 
-      - name: Instalar dependencias
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate deployment package
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest httpx
+          zip -r deploy.zip . -x "*.git*" "node_modules/*"
 
-      - name: Ejecutar pruebas
-        run: python -m pytest -v
+      - name: Deploy to AWS Elastic Beanstalk
+        uses: einaregilsson/beanstalk-deploy@v21
+        with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws_session_token: ${{ secrets.AWS_SESSION_TOKEN }}
+          application_name: order-management-platform
+          environment_name: Order-management-platform-env-2
+          version_label: version-${{ github.sha }}
+          region: us-east-1
+          deployment_package: deploy.zip

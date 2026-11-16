@@ -1,31 +1,16 @@
-
 version: 0.2
 
 phases:
   install:
     runtime-versions:
-      python: 3.12
+      nodejs: 18
     commands:
-      - echo "Instalando dependencias"
-      - python -m pip install -r requirements.txt
-
+      - echo "Instalando dependencias de Node.js..."
+      - npm install
   build:
     commands:
-      - echo "Ejecutando pruebas de la API"
-      - python -m pytest -v --junitxml=test-results.xml
-
-  post_build:
-    commands:
-      - echo "Construccion finalizada"
-
-reports:
-  pruebas_pedidos:
-    files:
-      - test-results.xml
-    file-format: JUNITXML
-
+      - echo "Verificando compilacion del proyecto..."
 artifacts:
   files:
-    - "app/**/*"
-    - requirements.txt
-    - Procfile
+    - '**/*'
+  discard-paths: no

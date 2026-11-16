@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plataforma de Pedidos de Hielo - DevOps Cloud</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col">
+
+    <!-- Header / Navbar -->
+    <header class="bg-slate-800 border-b border-slate-700 shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <span class="text-3xl">🧊</span>
+                <div>
+                    <h1 class="text-xl font-bold tracking-wider text-cyan-400">ICE ORDER MANAGEMENT</h1>
+                    <p class="text-xs text-slate-400">Sistema Automatizado de Gestión y Logística</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-2">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-900 text-emerald-300 border border-emerald-700">
+                    <span class="w-2 h-2 mr-1.5 bg-emerald-400 rounded-full animate-pulse"></span> AWS Production Ready
+                </span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 py-8 flex-grow grid grid-cols-1 lg:grid-cols-3 gap-8 w-full">
+        
+        <!-- Formulario de Registro (Columna Izquierda) -->
+        <section class="bg-slate-800 border border-slate-700 rounded-xl p-6 shadow-xl h-fit">
+            <div class="flex items-center space-x-2 mb-6">
+                <svg class="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <h2 class="text-lg font-semibold text-white">Nuevo Pedido de Hielo</h2>
+            </div>
+
+            <form id="orderForm" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 uppercase tracking-wider mb-1">Cliente / Local</label>
+                    <input type="text" id="cliente" required class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-400 transition" placeholder="Ej. Supermercado El Dorado">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 uppercase tracking-wider mb-1">Tipo de Producto</label>
+                    <select id="producto" required class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-400 transition">
+                        <option value="" disabled selected>Seleccione el formato</option>
+                        <option value="Bolsa de Hielo en Cubos (5kg)">Bolsa de Hielo en Cubos (5kg)</option>
+                        <option value="Bolsa de Hielo en Cubos (10kg)">Bolsa de Hielo en Cubos (10kg)</option>
+                        <option value="Barra de Hielo Industrial">Barra de Hielo Industrial</option>
+                        <option value="Hielo Triturado (Sacos)">Hielo Triturado (Sacos)</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 uppercase tracking-wider mb-1">Cantidad</label>
+                    <input type="number" id="cantidad" min="1" required class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-400 transition" placeholder="Ej. 15">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 uppercase tracking-wider mb-1">Dirección de Entrega</label>
+                    <input type="text" id="direccion" required class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-400 transition" placeholder="Ej. Vía España, C. 50">
+                </div>
+
+                <button type="submit" class="w-full mt-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-medium py-2.5 px-4 rounded-lg shadow-lg transition transform active:scale-95">
+                    Registrar y Enviar Pedido
+                </button>
+            </form>
+        </section>
+
+        <!-- Listado y Panel de Pedidos (Columna Derecha - Ocupa 2 espacios) -->
+        <section class="lg:col-span-2 bg-slate-800 border border-slate-700 rounded-xl p-6 shadow-xl flex flex-col">
+            <div class="flex justify-between items-center mb-6">
+                <div class="flex items-center space-x-2">
+                    <svg class="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                    </svg>
+                    <h2 class="text-lg font-semibold text-white">Pedidos Activos en el Sistema</h2>
+                </div>
+                <button onclick="cargarPedidos()" class="text-xs bg-slate-700 hover:bg-slate-600 text-cyan-300 px-3 py-1.5 rounded-lg border border-slate-600 transition flex items-center space-x-1">
+                    🔄 Actualizar
+                </button>
+            </div>
+
+            <!-- Tabla de Pedidos -->
+            <div

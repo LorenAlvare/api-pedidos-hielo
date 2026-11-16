@@ -24,9 +24,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="API de Pedidos de Hielo",
+    title="API de Pedidos de Hielo LULI",
     description="Registro y seguimiento de pedidos de una empresa de hielo.",
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan,
 )
 
